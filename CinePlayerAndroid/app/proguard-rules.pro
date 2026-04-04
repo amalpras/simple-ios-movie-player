@@ -1,0 +1,6 @@
+-keep class com.cineplayer.android.models.** { *; }
+-keep class com.cineplayer.android.data.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn okhttp3.**
+-dontwarn retrofit2.**
