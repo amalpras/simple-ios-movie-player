@@ -365,7 +365,3 @@ private fun formatDuration(ms: Long): String {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun Modifier.clickableWithRipple(onClick: () -> Unit): Modifier =
     this.combinedClickable(onClick = onClick)
-
-// Convenience alias
-private fun Modifier.clickableItem(onClick: () -> Unit): Modifier =
-    this.combinedClickable(onClick = onClick)
