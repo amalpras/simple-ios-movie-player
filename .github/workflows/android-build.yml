@@ -1,0 +1,131 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master, copilot/create-android-video-player ]
+    paths:
+      - 'CinePlayerAndroid/**'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'CinePlayerAndroid/**'
+  workflow_dispatch:   # Allow manual trigger
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make gradlew executable
+        run: chmod +x CinePlayerAndroid/gradlew
+
+      - name: Restore Gradle wrapper jar
+        run: |
+          # Download the gradle wrapper jar if missing (it was not committed)
+          JAR_PATH="CinePlayerAndroid/gradle/wrapper/gradle-wrapper.jar"
+          if [ ! -f "$JAR_PATH" ]; then
+            curl -fsSL -o "$JAR_PATH" \
+              "https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar"
+            echo "Downloaded gradle-wrapper.jar"
+          else
+            echo "gradle-wrapper.jar already present"
+          fi
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('CinePlayerAndroid/**/*.gradle.kts', 'CinePlayerAndroid/**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build debug APK
+        working-directory: CinePlayerAndroid
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CinePlayer-debug-apk
+          path: CinePlayerAndroid/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: CinePlayerAndroid/app/build/reports/
+          retention-days: 7
+
+  build-release:
+    name: Build Release APK (unsigned)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make gradlew executable
+        run: chmod +x CinePlayerAndroid/gradlew
+
+      - name: Restore Gradle wrapper jar
+        run: |
+          JAR_PATH="CinePlayerAndroid/gradle/wrapper/gradle-wrapper.jar"
+          if [ ! -f "$JAR_PATH" ]; then
+            curl -fsSL -o "$JAR_PATH" \
+              "https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar"
+          fi
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-release-${{ hashFiles('CinePlayerAndroid/**/*.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build release APK (unsigned)
+        working-directory: CinePlayerAndroid
+        run: ./gradlew assembleRelease --no-daemon
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CinePlayer-release-unsigned-apk
+          path: CinePlayerAndroid/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
