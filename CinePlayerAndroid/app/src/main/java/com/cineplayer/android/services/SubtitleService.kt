@@ -142,6 +142,7 @@ class SubtitleService private constructor(private val context: Context) {
             SubtitleTrack(language = result.attributes.language.uppercase(), languageCode = result.attributes.language.lowercase(), filePath = dest.absolutePath, source = SubtitleSource.DOWNLOADED)
         } catch (e: retrofit2.HttpException) {
             if (e.code() == 429) throw RateLimitException()
+            android.util.Log.w("SubtitleService", "HTTP ${e.code()} downloading subtitle for '${item.title}'")
             null
         } catch (_: Exception) { null }
     }

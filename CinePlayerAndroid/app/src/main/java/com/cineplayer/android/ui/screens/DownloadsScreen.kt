@@ -349,11 +349,14 @@ private fun DownloadItemRow(
 }
 
 private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return "—"
     val gb = bytes.toDouble() / 1_073_741_824.0
     if (gb >= 1) return "%.1f GB".format(gb)
     val mb = bytes.toDouble() / 1_048_576.0
     if (mb >= 1) return "%.0f MB".format(mb)
-    return "${bytes / 1024} KB"
+    val kb = bytes.toDouble() / 1_024.0
+    if (kb >= 1) return "%.0f KB".format(kb)
+    return "$bytes B"
 }
 
 private fun formatDuration(ms: Long): String {
