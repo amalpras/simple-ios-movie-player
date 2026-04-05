@@ -67,9 +67,29 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { library.addMedia(uris) }
     }
 
-    fun getPlaybackState(itemId: String): PlaybackState? = library.getPlaybackState(itemId)
+    fun deleteItem(itemId: String) {
+        library.removeItem(itemId)
+    }
 
-    fun getSeries(seriesId: String): TVSeries? = library.seriesItem(seriesId)
+    fun markWatched(itemId: String) {
+        library.markWatched(itemId)
+    }
+
+    fun resetProgress(itemId: String) {
+        library.resetProgress(itemId)
+    }
+
+    fun refreshMetadata(itemId: String) {
+        viewModelScope.launch { library.refreshMetadata(itemId) }
+    }
+
+    fun refreshSubtitle(itemId: String) {
+        viewModelScope.launch { library.fetchSubtitleForItem(itemId) }
+    }
+
+    fun getPlaybackState(itemId: String): com.cineplayer.android.models.PlaybackState? = library.getPlaybackState(itemId)
+
+    fun getSeries(seriesId: String): com.cineplayer.android.models.TVSeries? = library.seriesItem(seriesId)
 
     fun getEpisodes(seriesId: String, season: Int): List<MediaItem> =
         library.episodes(seriesId, season)

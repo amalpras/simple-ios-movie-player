@@ -124,7 +124,8 @@ class MetadataService private constructor(private val context: Context) {
     suspend fun fetchMovieMetadata(item: MediaItem): MediaItem = withContext(Dispatchers.IO) {
         val apiKey = settings.tmdbApiKey.ifBlank { throw Exception("TMDB API key not configured") }
         val results = api.searchMovies(apiKey, item.title, item.releaseYear)
-        val top = results.results.firstOrNull() ?: throw Exception("No results found for: ${item.title}")
+        val top = bestMovieResult(results.results, item.title, item.releaseYear)
+            ?: throw Exception("No results found for: ${item.title}")
         val detail = api.getMovieDetail(top.id, apiKey)
         detail.posterPath?.let { downloadImage("$IMAGE_BASE/$POSTER_SIZE$it", it.trimStart('/')) }
         detail.backdropPath?.let { downloadImage("$IMAGE_BASE/$BACKDROP_SIZE$it", "bd_${it.trimStart('/')}") }
@@ -142,7 +143,8 @@ class MetadataService private constructor(private val context: Context) {
     suspend fun fetchSeriesMetadata(series: TVSeries): TVSeries = withContext(Dispatchers.IO) {
         val apiKey = settings.tmdbApiKey.ifBlank { throw Exception("TMDB API key not configured") }
         val results = api.searchTV(apiKey, series.name, series.firstAirYear)
-        val top = results.results.firstOrNull() ?: throw Exception("No results found for: ${series.name}")
+        val top = bestTVResult(results.results, series.name, series.firstAirYear)
+            ?: throw Exception("No results found for: ${series.name}")
         val detail = api.getTVDetail(top.id, apiKey)
         detail.posterPath?.let { downloadImage("$IMAGE_BASE/$POSTER_SIZE$it", it.trimStart('/')) }
         detail.backdropPath?.let { downloadImage("$IMAGE_BASE/$BACKDROP_SIZE$it", "bd_${it.trimStart('/')}") }
@@ -190,5 +192,38 @@ class MetadataService private constructor(private val context: Context) {
     fun getCachedPosterFile(posterPath: String): File? {
         val file = File(posterCacheDir, posterPath.trimStart('/'))
         return if (file.exists()) file else null
+    }
+
+    // MARK: - Best-match scoring
+
+    private fun bestMovieResult(results: List<TMDBMovieResult>, query: String, year: Int?): TMDBMovieResult? =
+        results.maxByOrNull { movieScore(it, query, year) }
+
+    private fun movieScore(r: TMDBMovieResult, query: String, year: Int?): Int {
+        var s = titleScore(r.title, query)
+        val ry = r.releaseDate.take(4).toIntOrNull()
+        if (year != null && ry != null) s += if (year == ry) 30 else if (kotlin.math.abs(year - ry) <= 1) 10 else 0
+        return s
+    }
+
+    private fun bestTVResult(results: List<TMDBTVResult>, query: String, year: Int?): TMDBTVResult? =
+        results.maxByOrNull { tvScore(it, query, year) }
+
+    private fun tvScore(r: TMDBTVResult, query: String, year: Int?): Int {
+        var s = titleScore(r.name, query)
+        val ry = r.firstAirDate.take(4).toIntOrNull()
+        if (year != null && ry != null) s += if (year == ry) 30 else if (kotlin.math.abs(year - ry) <= 1) 10 else 0
+        return s
+    }
+
+    private fun titleScore(title: String, query: String): Int {
+        val t = title.lowercase().trim()
+        val q = query.lowercase().trim()
+        if (t == q) return 100
+        if (t.startsWith(q) || q.startsWith(t)) return 70
+        if (t.contains(q) || q.contains(t)) return 40
+        val tWords = t.split(" ").toSet()
+        val qWords = q.split(" ").toSet()
+        return tWords.intersect(qWords).size * 10
     }
 }

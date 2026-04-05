@@ -36,6 +36,11 @@ class MediaLibrary private constructor(private val context: Context) {
     private val _recentlyAdded = MutableStateFlow<List<MediaItem>>(emptyList())
     val recentlyAdded: StateFlow<List<MediaItem>> = _recentlyAdded.asStateFlow()
 
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+    fun clearError() { _lastError.value = null }
+
     private val itemsMap = mutableMapOf<String, MediaItem>()
     private val seriesMap = mutableMapOf<String, TVSeries>()
     private val playbackStates = mutableMapOf<String, PlaybackState>()
@@ -245,6 +250,8 @@ class MediaLibrary private constructor(private val context: Context) {
             )
             updatePublishedState()
             saveToStorage()
+        } catch (e: SubtitleService.RateLimitException) {
+            _lastError.value = "OpenSubtitles daily download limit reached. Try again tomorrow."
         } catch (_: Exception) {}
     }
 

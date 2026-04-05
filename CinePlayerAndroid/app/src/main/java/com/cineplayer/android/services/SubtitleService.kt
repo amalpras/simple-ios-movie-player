@@ -51,6 +51,9 @@ interface OpenSubtitlesApi {
 }
 
 class SubtitleService private constructor(private val context: Context) {
+    /** Thrown when the OpenSubtitles daily download quota (HTTP 429) is exceeded. */
+    class RateLimitException : Exception("OpenSubtitles daily download limit reached")
+
     private val settings = AppSettings.getInstance(context)
     private var authToken: String = ""
 
@@ -137,6 +140,9 @@ class SubtitleService private constructor(private val context: Context) {
             val dest = File(subtitlesDir, fileName)
             FileOutputStream(dest).use { it.write(URL(link).readBytes()) }
             SubtitleTrack(language = result.attributes.language.uppercase(), languageCode = result.attributes.language.lowercase(), filePath = dest.absolutePath, source = SubtitleSource.DOWNLOADED)
+        } catch (e: retrofit2.HttpException) {
+            if (e.code() == 429) throw RateLimitException()
+            null
         } catch (_: Exception) { null }
     }
 

@@ -38,39 +38,81 @@ struct DownloadsView: View {
                         }
                     }
                 } else {
-                    List {
-                        ForEach(mediaLibrary.allItems.sorted { $0.dateAdded > $1.dateAdded }) { item in
-                            DownloadRow(item: item, playbackState: playbackManager.state(for: item.id))
-                                .listRowBackground(Color.black)
-                                .contentShape(Rectangle())
-                                .onTapGesture { selectedItem = item }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) {
-                                        itemToDelete = item
-                                        showDeleteConfirm = true
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                    VStack(spacing: 0) {
+                        // Error banner
+                        if let error = mediaLibrary.lastError {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.yellow)
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                                    .lineLimit(2)
+                                Spacer()
+                                Button {
+                                    mediaLibrary.lastError = nil
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .font(.caption)
                                 }
-                                .swipeActions(edge: .leading) {
-                                    Button {
-                                        Task { await mediaLibrary.refreshMetadata(for: item) }
-                                    } label: {
-                                        Label("Refresh", systemImage: "arrow.clockwise")
-                                    }
-                                    .tint(.blue)
-
-                                    Button {
-                                        Task { await mediaLibrary.refreshSubtitle(for: item) }
-                                    } label: {
-                                        Label("Subtitles", systemImage: "captions.bubble")
-                                    }
-                                    .tint(.orange)
-                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.orange.opacity(0.85))
                         }
+
+                        List {
+                            ForEach(mediaLibrary.allItems.sorted { $0.dateAdded > $1.dateAdded }) { item in
+                                DownloadRow(item: item, playbackState: playbackManager.state(for: item.id))
+                                    .listRowBackground(Color.black)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { selectedItem = item }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button(role: .destructive) {
+                                            itemToDelete = item
+                                            showDeleteConfirm = true
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
+                                    .swipeActions(edge: .leading) {
+                                        // Mark watched / unwatched toggle
+                                        if item.isWatched {
+                                            Button {
+                                                mediaLibrary.resetProgress(item.id)
+                                            } label: {
+                                                Label("Unwatch", systemImage: "arrow.counterclockwise")
+                                            }
+                                            .tint(.purple)
+                                        } else {
+                                            Button {
+                                                mediaLibrary.markWatched(item.id)
+                                            } label: {
+                                                Label("Watched", systemImage: "checkmark.circle")
+                                            }
+                                            .tint(.green)
+                                        }
+
+                                        Button {
+                                            Task { await mediaLibrary.refreshMetadata(for: item) }
+                                        } label: {
+                                            Label("Refresh", systemImage: "arrow.clockwise")
+                                        }
+                                        .tint(.blue)
+
+                                        Button {
+                                            Task { await mediaLibrary.refreshSubtitle(for: item) }
+                                        } label: {
+                                            Label("Subtitles", systemImage: "captions.bubble")
+                                        }
+                                        .tint(.orange)
+                                    }
+                            }
+                        }
+                        .listStyle(.plain)
+                        .background(Color.black)
                     }
-                    .listStyle(.plain)
-                    .background(Color.black)
                 }
             }
             .navigationTitle("All Files")

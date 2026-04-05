@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -24,6 +25,146 @@ import androidx.navigation.navArgument
 import com.cineplayer.android.ui.screens.*
 import com.cineplayer.android.ui.theme.CinePlayerTheme
 import com.cineplayer.android.viewmodels.PlayerViewModel
+
+class MainActivity : ComponentActivity() {
+    private var playerViewModel: PlayerViewModel? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            CinePlayerTheme {
+                CinePlayerNavigation(onPlayerViewModelCreated = { playerViewModel = it })
+            }
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val vm = playerViewModel ?: return
+        if (vm.exoPlayer.isPlaying && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            enterPictureInPictureMode(
+                PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
+            )
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        playerViewModel?.setPipMode(isInPictureInPictureMode)
+    }
+}
+
+private sealed class NavScreen(val route: String) {
+    data object Library : NavScreen("library")
+    data object Downloads : NavScreen("downloads")
+    data object Settings : NavScreen("settings")
+    data object Player : NavScreen("player/{itemId}")
+    data object Series : NavScreen("series/{seriesId}")
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CinePlayerNavigation(onPlayerViewModelCreated: (PlayerViewModel) -> Unit) {
+    val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val bottomNavRoutes = listOf(NavScreen.Library.route, NavScreen.Downloads.route, NavScreen.Settings.route)
+    val showBottomNav = currentRoute in bottomNavRoutes
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomNav) {
+                NavigationBar {
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Movie, contentDescription = "Library") },
+                        label = { Text("Library") },
+                        selected = currentRoute == NavScreen.Library.route,
+                        onClick = {
+                            navController.navigate(NavScreen.Library.route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.FolderOpen, contentDescription = "Downloads") },
+                        label = { Text("Files") },
+                        selected = currentRoute == NavScreen.Downloads.route,
+                        onClick = {
+                            navController.navigate(NavScreen.Downloads.route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings") },
+                        selected = currentRoute == NavScreen.Settings.route,
+                        onClick = {
+                            navController.navigate(NavScreen.Settings.route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    ) { scaffoldPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = NavScreen.Library.route,
+            modifier = Modifier.padding(scaffoldPadding)
+        ) {
+            composable(NavScreen.Library.route) {
+                LibraryScreen(
+                    onMovieClick = { itemId -> navController.navigate("player/$itemId") },
+                    onSeriesClick = { seriesId -> navController.navigate("series/$seriesId") }
+                )
+            }
+            composable(NavScreen.Downloads.route) {
+                DownloadsScreen(
+                    onItemClick = { itemId -> navController.navigate("player/$itemId") }
+                )
+            }
+            composable(NavScreen.Settings.route) {
+                SettingsScreen()
+            }
+            composable(
+                NavScreen.Player.route,
+                arguments = listOf(navArgument("itemId") { type = NavType.StringType })
+            ) { back ->
+                val itemId = back.arguments?.getString("itemId") ?: return@composable
+                val pvm: PlayerViewModel = viewModel()
+                LaunchedEffect(Unit) { onPlayerViewModelCreated(pvm) }
+                PlayerScreen(
+                    itemId = itemId,
+                    onBack = { navController.popBackStack() },
+                    viewModel = pvm
+                )
+            }
+            composable(
+                NavScreen.Series.route,
+                arguments = listOf(navArgument("seriesId") { type = NavType.StringType })
+            ) { back ->
+                val seriesId = back.arguments?.getString("seriesId") ?: return@composable
+                SeriesDetailScreen(
+                    seriesId = seriesId,
+                    onBack = { navController.popBackStack() },
+                    onEpisodeClick = { itemId -> navController.navigate("player/$itemId") }
+                )
+            }
+        }
+    }
+}
 
 class MainActivity : ComponentActivity() {
     private var playerViewModel: PlayerViewModel? = null
