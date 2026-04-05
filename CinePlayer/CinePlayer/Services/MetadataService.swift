@@ -30,7 +30,7 @@ final class MetadataService {
         let year = item.releaseYear
 
         let results = try await searchMovies(query: searchTitle, year: year)
-        guard let best = results.first else {
+        guard let best = bestMovieResult(results, query: searchTitle, year: year) else {
             throw MetadataError.notFound
         }
 
@@ -71,7 +71,7 @@ final class MetadataService {
         var updatedSeries = series
 
         let results = try await searchTV(query: series.name, year: series.firstAirYear)
-        guard let best = results.first else {
+        guard let best = bestTVResult(results, query: series.name, year: series.firstAirYear) else {
             throw MetadataError.notFound
         }
 
@@ -193,6 +193,48 @@ final class MetadataService {
             throw MetadataError.serverError
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    // MARK: - Best-Match Scoring
+
+    /// Picks the highest-scoring TMDB movie result by title similarity and year proximity.
+    private func bestMovieResult(_ results: [TMDBMovieResult], query: String, year: Int?) -> TMDBMovieResult? {
+        guard !results.isEmpty else { return nil }
+        return results.max { a, b in
+            movieScore(a, query: query, year: year) < movieScore(b, query: query, year: year)
+        }
+    }
+
+    private func movieScore(_ result: TMDBMovieResult, query: String, year: Int?) -> Int {
+        var s = titleScore(result.title, query: query)
+        if let y = year, let ry = result.year { s += y == ry ? 30 : (abs(y - ry) <= 1 ? 10 : 0) }
+        return s
+    }
+
+    private func bestTVResult(_ results: [TMDBTVResult], query: String, year: Int?) -> TMDBTVResult? {
+        guard !results.isEmpty else { return nil }
+        return results.max { a, b in
+            tvScore(a, query: query, year: year) < tvScore(b, query: query, year: year)
+        }
+    }
+
+    private func tvScore(_ result: TMDBTVResult, query: String, year: Int?) -> Int {
+        var s = titleScore(result.name, query: query)
+        if let y = year, let ry = result.year { s += y == ry ? 30 : (abs(y - ry) <= 1 ? 10 : 0) }
+        return s
+    }
+
+    private func titleScore(_ title: String, query: String) -> Int {
+        let t = title.lowercased().trimmingCharacters(in: .whitespaces)
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        if t == q { return 100 }
+        if t.hasPrefix(q) || q.hasPrefix(t) { return 70 }
+        if t.contains(q) || q.contains(t) { return 40 }
+        // Word-level overlap score
+        let tWords = Set(t.components(separatedBy: .whitespaces))
+        let qWords = Set(q.components(separatedBy: .whitespaces))
+        let overlap = tWords.intersection(qWords).count
+        return overlap * 10
     }
 
     // MARK: - Error

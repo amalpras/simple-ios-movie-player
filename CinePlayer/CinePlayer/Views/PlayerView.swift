@@ -25,7 +25,7 @@ struct PlayerView: View {
             Color.black.ignoresSafeArea()
 
             // Video player layer
-            VideoPlayerLayerView(player: playerVM.player)
+            VideoPlayerLayerView(player: playerVM.player, videoGravity: playerVM.videoGravity)
                 .ignoresSafeArea()
                 .onTapGesture {
                     playerVM.toggleControls()
@@ -112,16 +112,19 @@ struct PlayerView: View {
 // MARK: - VideoPlayerLayerView
 struct VideoPlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
+    let videoGravity: AVLayerVideoGravity
 
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspect
+        view.playerLayer.videoGravity = videoGravity
         view.backgroundColor = .black
         return view
     }
 
-    func updateUIView(_ uiView: PlayerUIView, context: Context) {}
+    func updateUIView(_ uiView: PlayerUIView, context: Context) {
+        uiView.playerLayer.videoGravity = videoGravity
+    }
 }
 
 class PlayerUIView: UIView {
@@ -169,6 +172,9 @@ final class PlayerViewModel: ObservableObject {
     @Published var showAudioTrackPicker = false
     @Published var showSubtitlePicker = false
     @Published var showSpeedPicker = false
+
+    // Aspect ratio / video gravity
+    @Published var videoGravity: AVLayerVideoGravity = .resizeAspect
 
     // Error
     @Published var errorMessage: String?
@@ -285,11 +291,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func setAspectRatio(_ gravity: AVLayerVideoGravity) {
-        // Notify the layer view to update (via notification or environment)
-        NotificationCenter.default.post(
-            name: .init("CinePlayer.AspectRatioChanged"),
-            object: gravity.rawValue
-        )
+        videoGravity = gravity
     }
 
     // MARK: - Resume Playback
@@ -1033,18 +1035,22 @@ struct AirPlayButton: UIViewRepresentable {
 
 struct AspectRatioButton: View {
     @ObservedObject var playerVM: PlayerViewModel
-    @State private var currentGravity: AVLayerVideoGravity = .resizeAspect
 
-    let gravities: [AVLayerVideoGravity] = [.resizeAspect, .resizeAspectFill, .resize]
-    let icons = ["aspectratio", "arrow.up.left.and.arrow.down.right", "arrow.left.and.right"]
+    private let gravities: [AVLayerVideoGravity] = [.resizeAspect, .resizeAspectFill, .resize]
+    private let icons: [String] = [
+        "aspectratio",
+        "arrow.up.left.and.arrow.down.right",
+        "arrow.left.and.right"
+    ]
+    private let tooltips = ["Fit", "Fill", "Stretch"]
 
     var body: some View {
+        let currentIndex = gravities.firstIndex(of: playerVM.videoGravity) ?? 0
         Button {
-            let idx = gravities.firstIndex(of: currentGravity) ?? 0
-            currentGravity = gravities[(idx + 1) % gravities.count]
-            playerVM.setAspectRatio(currentGravity)
+            let nextIndex = (currentIndex + 1) % gravities.count
+            playerVM.setAspectRatio(gravities[nextIndex])
         } label: {
-            Image(systemName: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left")
+            Image(systemName: icons[currentIndex])
                 .font(.title3)
                 .foregroundColor(.white)
         }

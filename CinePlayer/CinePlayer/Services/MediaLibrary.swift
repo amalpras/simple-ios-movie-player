@@ -16,6 +16,7 @@ final class MediaLibrary: ObservableObject {
     @Published private(set) var continueWatching: [MediaItem] = []
     @Published var isScanning: Bool = false
     @Published var scanProgress: Double = 0
+    @Published var lastError: String?
 
     private let storageKey = "CinePlayer.MediaLibrary"
     private let seriesStorageKey = "CinePlayer.TVSeries"
@@ -52,6 +53,13 @@ final class MediaLibrary: ObservableObject {
         item.seasonNumber = parsed.seasonNumber
         item.episodeNumber = parsed.episodeNumber
         item.releaseYear = parsed.year
+
+        // Store security-scoped bookmark for persistent access across launches
+        item.bookmarkData = try? url.bookmarkData(
+            options: .minimalBookmark,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
 
         // Probe duration asynchronously
         if let duration = await probeDuration(url: url) {
@@ -101,8 +109,6 @@ final class MediaLibrary: ObservableObject {
         save()
     }
 
-    // MARK: - Update Playback State
-
     @MainActor
     func updatePlaybackPosition(itemID: UUID, position: TimeInterval, duration: TimeInterval) {
         guard let idx = allItems.firstIndex(where: { $0.id == itemID }) else { return }
@@ -114,6 +120,27 @@ final class MediaLibrary: ObservableObject {
         allItems[idx].lastWatchedDate = Date()
         updateDerivedLists()
         PlaybackStateManager.shared.update(itemID: itemID, position: position, duration: duration)
+        save()
+    }
+
+    @MainActor
+    func markWatched(_ itemID: UUID) {
+        guard let idx = allItems.firstIndex(where: { $0.id == itemID }) else { return }
+        allItems[idx].isWatched = true
+        allItems[idx].lastPlaybackPosition = allItems[idx].duration
+        allItems[idx].lastWatchedDate = Date()
+        PlaybackStateManager.shared.markWatched(itemID)
+        updateDerivedLists()
+        save()
+    }
+
+    @MainActor
+    func resetProgress(_ itemID: UUID) {
+        guard let idx = allItems.firstIndex(where: { $0.id == itemID }) else { return }
+        allItems[idx].isWatched = false
+        allItems[idx].lastPlaybackPosition = 0
+        PlaybackStateManager.shared.resetProgress(itemID)
+        updateDerivedLists()
         save()
     }
 
@@ -153,25 +180,13 @@ final class MediaLibrary: ObservableObject {
     // MARK: - Auto-Subtitle Fetch
 
     func fetchSubtitleForItem(id: UUID) async {
-        guard let idx = allItems.firstIndex(where: { $0.id == id }) else { return }
-        let item = allItems[idx]
-
-        // Skip if already has subtitles
-        if !item.subtitleFiles.isEmpty { return }
-
         do {
-            if let track = try await SubtitleService.shared.findAndDownloadSubtitle(for: item) {
-                await MainActor.run {
-                    guard let i = allItems.firstIndex(where: { $0.id == id }) else { return }
-                    allItems[i].subtitleFiles.append(track)
-                    if allItems[i].selectedSubtitleIndex == nil {
-                        allItems[i].selectedSubtitleIndex = 0
-                    }
-                    save()
-                }
-            }
+            try await fetchSubtitleForItemThrowing(id: id)
+        } catch SubtitleService.SubtitleError.rateLimited {
+            await MainActor.run { lastError = "OpenSubtitles daily download limit reached. Try again tomorrow." }
         } catch {
-            print("[SubtitleService] Failed for \(item.title): \(error.localizedDescription)")
+            guard let idx = allItems.firstIndex(where: { $0.id == id }) else { return }
+            print("[SubtitleService] Failed for \(allItems[idx].title): \(error.localizedDescription)")
         }
     }
 
@@ -346,7 +361,30 @@ final class MediaLibrary: ObservableObject {
 
     private func load() {
         if let data = UserDefaults.standard.data(forKey: storageKey),
-           let items = try? JSONDecoder().decode([MediaItem].self, from: data) {
+           var items = try? JSONDecoder().decode([MediaItem].self, from: data) {
+            // Resolve security-scoped bookmarks to restore file access across launches
+            items = items.map { item in
+                var item = item
+                if let bookmarkData = item.bookmarkData {
+                    var isStale = false
+                    if let resolvedURL = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withoutUI,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    ) {
+                        item.fileURL = resolvedURL
+                        if isStale {
+                            item.bookmarkData = try? resolvedURL.bookmarkData(
+                                options: .minimalBookmark,
+                                includingResourceValuesForKeys: nil,
+                                relativeTo: nil
+                            )
+                        }
+                    }
+                }
+                return item
+            }
             allItems = items
             movies = items.filter { $0.mediaType == .movie || $0.mediaType == .unknown }
         }
@@ -394,6 +432,27 @@ final class MediaLibrary: ObservableObject {
                 allItems[idx].subtitleFiles.removeAll { $0.source == .downloaded }
             }
         }
-        await fetchSubtitleForItem(id: item.id)
+        do {
+            try await fetchSubtitleForItemThrowing(id: item.id)
+        } catch SubtitleService.SubtitleError.rateLimited {
+            await MainActor.run { lastError = "OpenSubtitles daily download limit reached. Try again tomorrow." }
+        } catch {}
+    }
+
+    // Internal throwing version used by refresh and auto-fetch
+    private func fetchSubtitleForItemThrowing(id: UUID) async throws {
+        guard let idx = allItems.firstIndex(where: { $0.id == id }) else { return }
+        let item = allItems[idx]
+        if !item.subtitleFiles.isEmpty { return }
+        if let track = try await SubtitleService.shared.findAndDownloadSubtitle(for: item) {
+            await MainActor.run {
+                guard let i = allItems.firstIndex(where: { $0.id == id }) else { return }
+                allItems[i].subtitleFiles.append(track)
+                if allItems[i].selectedSubtitleIndex == nil {
+                    allItems[i].selectedSubtitleIndex = 0
+                }
+                save()
+            }
+        }
     }
 }

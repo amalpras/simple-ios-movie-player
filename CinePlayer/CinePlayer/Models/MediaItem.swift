@@ -38,6 +38,9 @@ struct MediaItem: Identifiable, Codable, Hashable {
     // Audio
     var selectedAudioTrackIndex: Int?
 
+    // Persistent access: security-scoped URL bookmark stored when the file is first imported
+    var bookmarkData: Data?
+
     init(fileURL: URL, title: String, mediaType: MediaType) {
         self.id = UUID()
         self.fileURL = fileURL
